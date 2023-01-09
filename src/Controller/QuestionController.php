@@ -2,7 +2,11 @@
 
 namespace App\Controller;
 
+use App\Entity\Comment;
+use App\Entity\Question;
+use App\Form\CommentType;
 use App\Form\QuestionType;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
@@ -11,12 +15,20 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 class QuestionController extends AbstractController
 {
     #[Route('/question/ask', name: 'question_form')]
-    public function index(Request $request): Response
+    public function index(Request $request, EntityManagerInterface $entityManager): Response
     {
-        $formQuestion = $this->createForm(QuestionType::class);
+        $question = new Question();
+        $formQuestion = $this->createForm(QuestionType::class, $question);
         $formQuestion->handleRequest($request);
 
         if ($formQuestion->isSubmitted() && $formQuestion->isValid()) {
+            $question->setNbrOfResponse(0);
+            $question->setRating(0);
+            $question->setCreatedAt(new \DateTimeImmutable());
+            $entityManager->persist($question);
+            $entityManager->flush();
+            $this->addFlash('success', 'Votre question a été ajoutée');
+            return $this->redirectToRoute('home');
         }
 
         return $this->render('question/index.html.twig', [
@@ -25,21 +37,44 @@ class QuestionController extends AbstractController
     }
 
     #[Route('/question/{id}', name: 'question_show')]
-    public function show(Request $request, string $id): Response
+    public function show(Request $request, Question $question, EntityManagerInterface $entityManager): Response
     {
-        $question = [
-            'title' => 'Je suis la troisième question',
-            'content' => 'Lorem, ipsum dolor sit amet consectetur adipisicing elit. Ullam, facilis iusto! Amet quidem voluptate, aperiam consequuntur eum dolorum praesentium culpa quasi iste. Quaerat dolores placeat optio dicta, iusto ab excepturi.',
-            'rating' => -10,
-            'author' => [
-                'name' => 'Jean Dujardin',
-                'avatar' => 'https://www.programme-tv.net/imgre/fit/~2~providerPerson~26a210e5a2cb1a8b.jpeg/300x300/quality/80/jean-dujardin.jpeg'
-            ],
-            'nbrOfResponse' => 5,
-        ];
+        $comment = new Comment();
+        $commentForm = $this->createForm(CommentType::class, $comment);
+        $commentForm->handleRequest($request);
+
+        if ($commentForm->isSubmitted() && $commentForm->isValid()) {
+            $comment->setCreatedAt(new \DateTimeImmutable());
+            $comment->setRating(0);
+            $comment->setQuestion($question);
+            $question->setNbrOfResponse($question->getNbrOfResponse() + 1);
+            $entityManager->persist($comment);
+            $entityManager->flush();
+            $this->addFlash('success', 'Votre réponse a bien été ajoutée');
+            return $this->redirect($request->getUri());
+        }
 
         return $this->render('question/show.html.twig', [
             'question' => $question,
+            'form' => $commentForm->createView()
         ]);
+    }
+
+    #[Route('/question/rating/{id}/{score}', name: 'question_rating')]
+    public function ratingQuestion(Request $request, Question $question, int $score, EntityManagerInterface $entityManager)
+    {
+        $question->setRating($question->getRating() + $score);
+        $entityManager->flush();
+        $referer = $request->server->get('HTTP_REFERER');
+        return $referer ? $this->redirect($referer) : $this->redirectToRoute('home');
+    }
+
+    #[Route('/comment/rating/{id}/{score}', name: 'comment_rating')]
+    public function ratingComment(Request $request, Comment $comment, int $score, EntityManagerInterface $entityManager)
+    {
+        $comment->setRating($comment->getRating() + $score);
+        $entityManager->flush();
+        $referer = $request->server->get('HTTP_REFERER');
+        return $referer ? $this->redirect($referer) : $this->redirectToRoute('home');
     }
 }
