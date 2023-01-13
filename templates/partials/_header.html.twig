@@ -7,9 +7,21 @@
 			<i class="fa-solid fa-magnifying-glass"></i>
 			<input type="text">
 		</div>
+		{%- if is_granted("IS_AUTHENTICATED_FULLY") -%}
+			<div class="d-flex flex-row-nowrap justify-content-center align-items-center">
+				<a href="{{ path('current_user') }}">
+					<img src="{{ app.user.picture }}" class="avatar avatar-lg mr-10" alt="">
+				</a>
+				<small>
+					<a href="{{ path('logout') }}">Déconnexion</a>
+				</small>
+			</div>
+		
+		{% else %}
 		<div>
-			<button class="btn btn-primary mr-5">Inscription</button>
-			<button class="btn btn-primary-stroke">Connexion</button>
+			<a href="{{ path('signup') }}" class="btn btn-primary mr-5">Inscription</a>
+			<a href="{{ path('login') }}" class="btn btn-primary-stroke">Connexion</a>
 		</div>
+		{%- endif -%}
 	</div>
 </header>

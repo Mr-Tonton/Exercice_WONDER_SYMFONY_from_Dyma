@@ -131,6 +131,10 @@ small {
     margin-right: 10px;
 }
 
+.mb-10 {
+    margin-bottom: 10px;
+}
+
 .m-20 {
     margin: 20px;
 }
@@ -255,7 +259,7 @@ small {
     font-family: var(font-family);
     border: 0;
     border-radius: var(border-radius);
-    padding: 10px 26px;
+    padding: 10px 15px;
     background-color: var(--gray-light);
 }
 
@@ -274,6 +278,11 @@ small {
     height: 30px;
     border-radius: 50%;
     border: var(--border);
+}
+
+.avatar-lg {
+    width: 40px;
+    height: 40px;
 }
 
 .clickable {
@@ -377,3 +386,18 @@ footer {
 .rating-down {
     color: var(--warning);
 }
+
+/* question text */
+
+.question-text,
+.question-response-text {
+line-height: var(--line-height-hight);
+white-space: pre-wrap;
+}
+
+/* user profile */
+
+.profile-picture {
+    width: 150px;
+    border-radius: var(--border-radius);
+  }

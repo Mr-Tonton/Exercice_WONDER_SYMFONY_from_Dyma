@@ -2,21 +2,27 @@
 
 namespace App\Controller;
 
+use App\Entity\Vote;
 use App\Entity\Comment;
 use App\Entity\Question;
 use App\Form\CommentType;
 use App\Form\QuestionType;
+use App\Repository\QuestionRepository;
+use App\Repository\VoteRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 
 class QuestionController extends AbstractController
 {
     #[Route('/question/ask', name: 'question_form')]
+    #[IsGranted('ROLE_USER')]
     public function index(Request $request, EntityManagerInterface $entityManager): Response
     {
+        $user = $this->getUser();
         $question = new Question();
         $formQuestion = $this->createForm(QuestionType::class, $question);
         $formQuestion->handleRequest($request);
@@ -24,6 +30,7 @@ class QuestionController extends AbstractController
         if ($formQuestion->isSubmitted() && $formQuestion->isValid()) {
             $question->setNbrOfResponse(0);
             $question->setRating(0);
+            $question->setAuthor($user);
             $question->setCreatedAt(new \DateTimeImmutable());
             $entityManager->persist($question);
             $entityManager->flush();
@@ -37,43 +44,95 @@ class QuestionController extends AbstractController
     }
 
     #[Route('/question/{id}', name: 'question_show')]
-    public function show(Request $request, Question $question, EntityManagerInterface $entityManager): Response
+    public function show(Request $request, QuestionRepository $questionRepo, int $id, EntityManagerInterface $entityManager): Response
     {
-        $comment = new Comment();
-        $commentForm = $this->createForm(CommentType::class, $comment);
-        $commentForm->handleRequest($request);
+        $question = $questionRepo->getQuestionWithCommentsAndAuthors($id);
+        $options = [
+            'question' => $question
+        ];
+        $user = $this->getUser();
+        if ($user) {
+            $comment = new Comment();
+            $commentForm = $this->createForm(CommentType::class, $comment);
+            $commentForm->handleRequest($request);
 
-        if ($commentForm->isSubmitted() && $commentForm->isValid()) {
-            $comment->setCreatedAt(new \DateTimeImmutable());
-            $comment->setRating(0);
-            $comment->setQuestion($question);
-            $question->setNbrOfResponse($question->getNbrOfResponse() + 1);
-            $entityManager->persist($comment);
-            $entityManager->flush();
-            $this->addFlash('success', 'Votre réponse a bien été ajoutée');
-            return $this->redirect($request->getUri());
+            if ($commentForm->isSubmitted() && $commentForm->isValid()) {
+                $comment->setCreatedAt(new \DateTimeImmutable());
+                $comment->setRating(0);
+                $comment->setQuestion($question);
+                $comment->setAuthor($user);
+                $question->setNbrOfResponse($question->getNbrOfResponse() + 1);
+                $entityManager->persist($comment);
+                $entityManager->flush();
+                $this->addFlash('success', 'Votre réponse a bien été ajoutée');
+                return $this->redirect($request->getUri());
+            }
+            $options['form'] = $commentForm->createView();
         }
 
-        return $this->render('question/show.html.twig', [
-            'question' => $question,
-            'form' => $commentForm->createView()
-        ]);
+        return $this->render('question/show.html.twig', $options);
     }
 
     #[Route('/question/rating/{id}/{score}', name: 'question_rating')]
-    public function ratingQuestion(Request $request, Question $question, int $score, EntityManagerInterface $entityManager)
+    #[IsGranted('ROLE_USER')]
+    public function ratingQuestion(Request $request, Question $question, int $score, EntityManagerInterface $em, VoteRepository $voteRepo)
     {
-        $question->setRating($question->getRating() + $score);
-        $entityManager->flush();
+        $user = $this->getUser();
+        if ($user !== $question->getAuthor()) {
+            $vote = $voteRepo->findOneBy([
+                'author' => $user,
+                'question' => $question
+            ]);
+            if ($vote) {
+                if (($vote->isIsLiked() && $score > 0) || (!$vote->isIsLiked() && $score < 0)) {
+                    $em->remove($vote);
+                    $question->setRating($question->getRating() + ($score > 0 ? -1 : 1));
+                } else {
+                    $vote->setIsLiked(!$vote->isIsLiked());
+                    $question->setRating($question->getRating() + ($score > 0 ? 2 : -2));
+                }
+            } else {
+                $vote = new Vote();
+                $vote->setAuthor($user);
+                $vote->setQuestion($question);
+                $vote->setIsLiked($score > 0 ? true : false);
+                $question->setRating($question->getRating() + $score);
+                $em->persist($vote);
+            }
+            $em->flush();
+        }
         $referer = $request->server->get('HTTP_REFERER');
         return $referer ? $this->redirect($referer) : $this->redirectToRoute('home');
     }
 
     #[Route('/comment/rating/{id}/{score}', name: 'comment_rating')]
-    public function ratingComment(Request $request, Comment $comment, int $score, EntityManagerInterface $entityManager)
+    #[IsGranted('ROLE_USER')]
+    public function ratingComment(Request $request, Comment $comment, int $score, EntityManagerInterface $em, VoteRepository $voteRepo)
     {
-        $comment->setRating($comment->getRating() + $score);
-        $entityManager->flush();
+        $user = $this->getUser();
+        if ($user !== $comment->getAuthor()) {
+            $vote = $voteRepo->findOneBy([
+                'author' => $user,
+                'comment' => $comment
+            ]);
+            if ($vote) {
+                if (($vote->isIsLiked() && $score > 0) || (!$vote->isIsLiked() && $score < 0)) {
+                    $em->remove($vote);
+                    $comment->setRating($comment->getRating() + ($score > 0 ? -1 : 1));
+                } else {
+                    $vote->setIsLiked(!$vote->isIsLiked());
+                    $comment->setRating($comment->getRating() + ($score > 0 ? 2 : -2));
+                }
+            } else {
+                $vote = new Vote();
+                $vote->setAuthor($user);
+                $vote->setComment($comment);
+                $vote->setIsLiked($score > 0 ? true : false);
+                $comment->setRating($comment->getRating() + $score);
+                $em->persist($vote);
+            }
+            $em->flush();
+        }
         $referer = $request->server->get('HTTP_REFERER');
         return $referer ? $this->redirect($referer) : $this->redirectToRoute('home');
     }
